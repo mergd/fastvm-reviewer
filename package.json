@@ -1,0 +1,24 @@
+{
+  "name": "fastvm-pr-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "dev:worker": "wrangler dev",
+    "start": "bun src/server.ts",
+    "setup:wizard": "bun src/cli/setup.ts",
+    "typecheck": "tsc --noEmit",
+    "build:snapshot": "bun scripts/build-reviewer-snapshot.ts",
+    "cf:check": "wrangler check",
+    "cf:deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "latest",
+    "wrangler": "^4.80.0"
+  },
+  "dependencies": {
+    "openai": "^6.33.0"
+  }
+}
