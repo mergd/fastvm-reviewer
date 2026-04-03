@@ -6,7 +6,6 @@ import { GitHubCheckRuns } from "./github/check-runs";
 import { GitHubInstallations } from "./github/installations";
 import { GitHubPullRequests } from "./github/pr-context";
 import { GitHubReviewComments } from "./github/review-comments";
-import { OpenAIResponsesClient } from "./openai/responses-client";
 import { SetupAnalyzer } from "./onboarding/setup-analysis";
 import { InMemoryRepoStore } from "./state/repo-store";
 
@@ -20,7 +19,6 @@ export interface AppContext {
   githubPullRequests: GitHubPullRequests;
   githubCheckRuns: GitHubCheckRuns;
   githubReviewComments: GitHubReviewComments;
-  openAiResponses: OpenAIResponsesClient;
   setupAnalyzer: SetupAnalyzer;
 }
 
@@ -32,10 +30,9 @@ export function createAppContext(source?: EnvSource): AppContext {
   const githubPullRequests = new GitHubPullRequests(githubAuth, store);
   const githubCheckRuns = new GitHubCheckRuns(githubAuth);
   const githubReviewComments = new GitHubReviewComments(githubAuth);
-  const openAiResponses = new OpenAIResponsesClient(env);
-  const setupAnalyzer = new SetupAnalyzer(openAiResponses);
-  const fastVm = new FastVmClient(env);
-  const sessions = new SessionManager(fastVm, env.baseSnapshotName);
+  const setupAnalyzer = new SetupAnalyzer(env.openAiApiKey);
+  const fastVm = new FastVmClient(env.fastVmApiKey);
+  const sessions = new SessionManager(fastVm);
 
   return {
     env,
@@ -47,7 +44,6 @@ export function createAppContext(source?: EnvSource): AppContext {
     githubPullRequests,
     githubCheckRuns,
     githubReviewComments,
-    openAiResponses,
-    setupAnalyzer
+    setupAnalyzer,
   };
 }

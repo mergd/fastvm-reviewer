@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { FastVmCommandResult, ReviewerSession } from "../types";
 import { FastVmClient } from "./client";
 
+const DEFAULT_BASE_SNAPSHOT = "reviewer-base";
+
 export class SessionManager {
   constructor(
     private readonly fastVm: FastVmClient,
-    private readonly baseSnapshotName: string
+    private readonly baseSnapshotName: string = DEFAULT_BASE_SNAPSHOT,
   ) {}
 
   async startReviewSession(repoFullName: string, baselineSnapshotId?: string): Promise<ReviewerSession> {

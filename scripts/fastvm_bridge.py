@@ -6,12 +6,33 @@ import sys
 from fastvm import FastVM
 
 
+def to_jsonable(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, (list, tuple)):
+        return [to_jsonable(item) for item in value]
+
+    if isinstance(value, dict):
+        return {key: to_jsonable(item) for key, item in value.items()}
+
+    attributes = {}
+    for name in dir(value):
+        if name.startswith("_"):
+            continue
+        attr = getattr(value, name)
+        if callable(attr):
+            continue
+        attributes[name] = to_jsonable(attr)
+
+    return attributes
+
+
 async def main() -> None:
     payload = json.loads(sys.stdin.read() or "{}")
     try:
         async with FastVM(
             api_key=os.environ.get("FASTVM_API_KEY"),
-            base_url=os.environ.get("FASTVM_BASE_URL", "https://api.fastvm.org"),
         ) as client:
             action = payload["action"]
 
@@ -20,7 +41,7 @@ async def main() -> None:
                     machine=payload.get("machine", "c1m2"),
                     name=payload.get("name"),
                 )
-                print(json.dumps({"ok": True, "machine": machine.__dict__}))
+                print(json.dumps({"ok": True, "machine": to_jsonable(machine)}))
                 return
 
             if action == "restore":
@@ -28,7 +49,7 @@ async def main() -> None:
                     payload["snapshot"],
                     name=payload.get("name"),
                 )
-                print(json.dumps({"ok": True, "machine": machine.__dict__}))
+                print(json.dumps({"ok": True, "machine": to_jsonable(machine)}))
                 return
 
             if action == "run":
@@ -37,7 +58,7 @@ async def main() -> None:
                     payload["command"],
                     timeout_sec=payload.get("timeoutSec"),
                 )
-                print(json.dumps({"ok": True, "result": result.__dict__}))
+                print(json.dumps({"ok": True, "result": to_jsonable(result)}))
                 return
 
             if action == "snapshot":
@@ -45,7 +66,7 @@ async def main() -> None:
                     payload["vm"],
                     name=payload.get("name", ""),
                 )
-                print(json.dumps({"ok": True, "snapshot": snapshot.__dict__}))
+                print(json.dumps({"ok": True, "snapshot": to_jsonable(snapshot)}))
                 return
 
             if action == "remove":
@@ -64,7 +85,7 @@ async def main() -> None:
                     json.dumps(
                         {
                             "ok": True,
-                            "snapshots": [snapshot.__dict__ for snapshot in snapshots],
+                            "snapshots": [to_jsonable(snapshot) for snapshot in snapshots],
                         }
                     )
                 )

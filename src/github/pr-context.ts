@@ -44,11 +44,12 @@ export class GitHubPullRequests {
     const repo = payload.repository.name;
     const installationId = payload.installation.id;
     const prNumber = payload.pull_request.number;
-    const files = await this.auth.request<GitHubPullRequestFile[]>(
-      `/repos/${owner}/${repo}/pulls/${prNumber}/files`,
-      { method: "GET" },
-      installationId
-    );
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+    const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
+      owner,
+      repo,
+      pull_number: prNumber
+    }) as GitHubPullRequestFile[];
 
     const context: PullRequestContext = {
       owner,

@@ -5,8 +5,11 @@ export class GitHubReviewComments {
   constructor(private readonly auth: GitHubAppAuth) {}
 
   async publishSummary(context: PullRequestContext, report: ReviewReport): Promise<void> {
+    const octokit = await this.auth.getInstallationOctokit(context.installationId);
     const comments = report.findings
-      .filter((finding) => finding.filePath && finding.line)
+      .filter((finding): finding is typeof finding & { filePath: string; line: number } =>
+        typeof finding.filePath === "string" && typeof finding.line === "number"
+      )
       .slice(0, 10)
       .map((finding) => ({
         path: finding.filePath,
@@ -14,19 +17,15 @@ export class GitHubReviewComments {
         body: `**${finding.title}**\n\n${finding.summary}${finding.suggestion ? `\n\nSuggestion: ${finding.suggestion}` : ""}`
       }));
 
-    await this.auth.request(
-      `/repos/${context.owner}/${context.repo}/pulls/${context.prNumber}/reviews`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          event: report.verdict === "pass" ? "COMMENT" : "REQUEST_CHANGES",
-          body: this.buildReviewBody(report),
-          commit_id: context.headSha,
-          comments
-        })
-      },
-      context.installationId
-    );
+    await octokit.rest.pulls.createReview({
+      owner: context.owner,
+      repo: context.repo,
+      pull_number: context.prNumber,
+      event: report.verdict === "pass" ? "COMMENT" : "REQUEST_CHANGES",
+      body: this.buildReviewBody(report),
+      commit_id: context.headSha,
+      comments
+    });
   }
 
   private buildReviewBody(report: ReviewReport): string {

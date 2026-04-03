@@ -21,7 +21,6 @@ export class OnboardingService {
       app.store,
       this.bootstrapper,
       this.validator,
-      app.env.baselineRefreshCronHours
     );
   }
 

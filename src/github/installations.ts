@@ -114,11 +114,20 @@ export class GitHubInstallations {
     owner: string,
     repo: string
   ): Promise<Array<{ name: string }>> {
-    return this.auth.request<Array<{ name: string }>>(
-      `/repos/${owner}/${repo}/contents`,
-      { method: "GET" },
-      installationId
-    );
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+    const response = await octokit.rest.repos.getContent({
+      owner,
+      repo,
+      path: ""
+    });
+
+    if (!Array.isArray(response.data)) {
+      return [];
+    }
+
+    return response.data.map((entry) => ({
+      name: entry.name
+    }));
   }
 
   async collectSetupDocuments(
@@ -162,31 +171,33 @@ export class GitHubInstallations {
     path: string,
     optional = false
   ): Promise<string> {
-    const token = await this.auth.createInstallationToken(installationId);
-    const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, {
-      method: "GET",
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${token}`,
-        "x-github-api-version": "2022-11-28"
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+
+    try {
+      const response = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path
+      });
+
+      if (Array.isArray(response.data)) {
+        return "";
       }
-    });
 
-    if (optional && response.status === 404) {
-      return "";
+      if (response.data.type !== "file") {
+        return "";
+      }
+
+      const encoded = response.data.content.replaceAll("\n", "");
+      return response.data.encoding === "base64"
+        ? Buffer.from(encoded, "base64").toString("utf8")
+        : encoded;
+    } catch (error) {
+      if (optional && error instanceof Error && "status" in error && error.status === 404) {
+        return "";
+      }
+
+      throw error;
     }
-
-    if (!response.ok) {
-      throw new Error(`Failed to read ${path}: ${response.status} ${await response.text()}`);
-    }
-
-    const payload = await response.json() as {
-      content?: string;
-      encoding?: string;
-    };
-    const encoded = payload.content?.replaceAll("\n", "") ?? "";
-    return payload.encoding === "base64"
-      ? Buffer.from(encoded, "base64").toString("utf8")
-      : encoded;
   }
 }

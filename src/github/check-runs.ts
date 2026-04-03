@@ -17,24 +17,27 @@ export class GitHubCheckRuns {
   constructor(private readonly auth: GitHubAppAuth) {}
 
   async create(args: CreateCheckRunArgs): Promise<GitHubCheckRun> {
-    return this.auth.request<GitHubCheckRun>(
-      `/repos/${args.owner}/${args.repo}/check-runs`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name: "FastVM Reviewer",
-          head_sha: args.headSha,
-          status: args.status,
-          conclusion: args.conclusion,
-          output: {
-            title: args.title,
-            summary: args.summary,
-            text: args.text
-          }
-        })
-      },
-      args.installationId
-    );
+    const octokit = await this.auth.getInstallationOctokit(args.installationId);
+    const response = await octokit.rest.checks.create({
+      owner: args.owner,
+      repo: args.repo,
+      name: "FastVM Reviewer",
+      head_sha: args.headSha,
+      status: args.status,
+      conclusion: args.conclusion,
+      output: {
+        title: args.title,
+        summary: args.summary,
+        text: args.text
+      }
+    });
+
+    return {
+      id: response.data.id,
+      html_url: response.data.html_url ?? undefined,
+      status: response.data.status,
+      conclusion: response.data.conclusion ?? undefined
+    };
   }
 
   async update(
@@ -45,23 +48,27 @@ export class GitHubCheckRuns {
     report: ReviewReport
   ): Promise<GitHubCheckRun> {
     const conclusion = this.toConclusion(report.verdict);
-    return this.auth.request<GitHubCheckRun>(
-      `/repos/${owner}/${repo}/check-runs/${checkRunId}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: "completed",
-          conclusion,
-          completed_at: new Date().toISOString(),
-          output: {
-            title: `FastVM Reviewer: ${report.verdict}`,
-            summary: report.summary,
-            text: this.renderReportText(report)
-          }
-        })
-      },
-      installationId
-    );
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+    const response = await octokit.rest.checks.update({
+      owner,
+      repo,
+      check_run_id: checkRunId,
+      status: "completed",
+      conclusion,
+      completed_at: new Date().toISOString(),
+      output: {
+        title: `FastVM Reviewer: ${report.verdict}`,
+        summary: report.summary,
+        text: this.renderReportText(report)
+      }
+    });
+
+    return {
+      id: response.data.id,
+      html_url: response.data.html_url ?? undefined,
+      status: response.data.status,
+      conclusion: response.data.conclusion ?? undefined
+    };
   }
 
   private renderReportText(report: ReviewReport): string {

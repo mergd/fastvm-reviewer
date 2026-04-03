@@ -4,13 +4,14 @@ import { markBaselineFailure, markBaselineStale } from "./baseline-state";
 import type { RepoStore } from "../state/repo-store";
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
+const DEFAULT_REFRESH_HOURS = 24;
 
 export class BaselineRefresher {
   constructor(
     private readonly store: RepoStore,
     private readonly bootstrapper: RepoBootstrapper,
     private readonly validator: RepoValidator,
-    private readonly refreshHours: number
+    private readonly refreshHours: number = DEFAULT_REFRESH_HOURS,
   ) {}
 
   async refreshActiveRepos(): Promise<void> {

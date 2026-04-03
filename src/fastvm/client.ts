@@ -1,5 +1,5 @@
 import process from "node:process";
-import type { EnvConfig } from "../config/env";
+import { existsSync } from "node:fs";
 import type {
   FastVmCommandResult,
   FastVmMachine,
@@ -35,7 +35,7 @@ interface BridgeResponse {
 }
 
 export class FastVmClient {
-  constructor(private readonly env: EnvConfig) {}
+  constructor(private readonly apiKey: string) {}
 
   async launch(machine = "c1m2", name?: string): Promise<FastVmMachine> {
     const response = await this.invoke({
@@ -109,12 +109,14 @@ export class FastVmClient {
   }
 
   private async invoke(payload: BridgeRequest): Promise<BridgeResponse> {
-    const childProcess = Bun.spawn(["python3", "scripts/fastvm_bridge.py"], {
+    const pythonExecutable = existsSync(".venv/bin/python")
+      ? ".venv/bin/python"
+      : "python3";
+    const childProcess = Bun.spawn([pythonExecutable, "scripts/fastvm_bridge.py"], {
       cwd: process.cwd(),
       env: {
         ...Bun.env,
-        FASTVM_API_KEY: this.env.fastVmApiKey,
-        FASTVM_BASE_URL: this.env.fastVmBaseUrl
+        FASTVM_API_KEY: this.apiKey
       },
       stdin: "pipe",
       stdout: "pipe",

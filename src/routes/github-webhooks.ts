@@ -22,7 +22,7 @@ export async function handleGitHubWebhook(request: Request, app: AppContext): Pr
   const rawBody = await request.text();
   const signature = request.headers.get("x-hub-signature-256");
 
-  if (!app.githubAuth.verifyWebhookSignature(rawBody, signature)) {
+  if (!await app.githubAuth.verifyWebhookSignature(rawBody, signature)) {
     return json({ error: "Invalid webhook signature" }, { status: 401 });
   }
 

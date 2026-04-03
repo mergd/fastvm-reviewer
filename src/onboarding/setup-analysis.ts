@@ -1,5 +1,7 @@
+import OpenAI from "openai";
 import type { SetupAnalysis, SetupDocument } from "../types";
-import { OpenAIResponsesClient } from "../openai/responses-client";
+
+const DEFAULT_MODEL = "gpt-5.4";
 
 const SETUP_ANALYSIS_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -44,6 +46,16 @@ const SETUP_ANALYSIS_SCHEMA: Record<string, unknown> = {
   }
 };
 
+const SYSTEM_PROMPT = [
+  "You are analyzing a software repository for a cloud development agent.",
+  "Infer the minimum setup needed to install dependencies, boot the app if applicable, run validation commands, and identify environment variables.",
+  "Do not assume the repository is JavaScript, Node, or web-specific.",
+  "Use exact commands from the repository when available, including Python, Rust, Go, Make, shell, Docker, or other toolchains.",
+  "Prefer exact commands from repository files over guesses.",
+  "If information is missing, omit uncertain commands instead of inventing them, and report the gaps in missingInformation.",
+  "The response must be valid JSON matching the provided schema."
+].join(" ");
+
 function renderDocuments(documents: SetupDocument[]): string {
   return documents
     .map((document) => [
@@ -56,10 +68,14 @@ function renderDocuments(documents: SetupDocument[]): string {
 }
 
 export class SetupAnalyzer {
-  constructor(private readonly responses: OpenAIResponsesClient) {}
+  private readonly client: OpenAI | null;
+
+  constructor(apiKey?: string) {
+    this.client = apiKey ? new OpenAI({ apiKey }) : null;
+  }
 
   isConfigured(): boolean {
-    return this.responses.isConfigured();
+    return this.client !== null;
   }
 
   async analyze(args: {
@@ -68,15 +84,10 @@ export class SetupAnalyzer {
     rootFiles: string[];
     documents: SetupDocument[];
   }): Promise<SetupAnalysis> {
-    const system = [
-      "You are analyzing a software repository for a cloud development agent.",
-      "Infer the minimum setup needed to install dependencies, boot the app if applicable, run validation commands, and identify environment variables.",
-      "Do not assume the repository is JavaScript, Node, or web-specific.",
-      "Use exact commands from the repository when available, including Python, Rust, Go, Make, shell, Docker, or other toolchains.",
-      "Prefer exact commands from repository files over guesses.",
-      "If information is missing, omit uncertain commands instead of inventing them, and report the gaps in missingInformation.",
-      "The response must be valid JSON matching the provided schema."
-    ].join(" ");
+    if (!this.client) {
+      throw new Error("OPENAI_API_KEY is not configured");
+    }
+
     const user = [
       `Repository: ${args.owner}/${args.repo}`,
       `Root files: ${args.rootFiles.join(", ") || "(none)"}`,
@@ -84,20 +95,37 @@ export class SetupAnalyzer {
       "Candidate setup documents:",
       renderDocuments(args.documents)
     ].join("\n");
-    const result = await this.responses.createJsonResponse<SetupAnalysis>({
-      system,
-      user,
-      schemaName: "repo_setup_analysis",
-      schemaDescription: "Structured repository setup analysis for a cloud coding agent",
-      schema: SETUP_ANALYSIS_SCHEMA
+
+    const response = await this.client.responses.create({
+      model: DEFAULT_MODEL,
+      store: false,
+      input: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: user },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "repo_setup_analysis",
+          description: "Structured repository setup analysis for a cloud coding agent",
+          strict: true,
+          schema: SETUP_ANALYSIS_SCHEMA,
+        },
+      },
     });
+
+    if (!response.output_text) {
+      throw new Error("OpenAI Responses API returned no text output");
+    }
+
+    const result = JSON.parse(response.output_text) as SetupAnalysis;
 
     return {
       ...result,
       profile: {
         ...result.profile,
-        setupSource: "openai"
-      }
+        setupSource: "openai",
+      },
     };
   }
 }

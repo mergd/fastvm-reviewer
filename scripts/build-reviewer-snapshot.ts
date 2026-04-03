@@ -1,10 +1,12 @@
 import { loadEnv } from "../src/config/env";
 import { FastVmClient } from "../src/fastvm/client";
 
+const SNAPSHOT_PREFIX = "reviewer-base";
+
 async function main(): Promise<void> {
   const env = loadEnv();
-  const fastVm = new FastVmClient(env);
-  const vm = await fastVm.launch("c1m2", `${env.baseSnapshotName}-builder-${Date.now()}`);
+  const fastVm = new FastVmClient(env.fastVmApiKey);
+  const vm = await fastVm.launch("c1m2", `${SNAPSHOT_PREFIX}-builder-${Date.now()}`);
 
   try {
     const commands = [
@@ -22,7 +24,7 @@ async function main(): Promise<void> {
       }
     }
 
-    const snapshot = await fastVm.snapshot(vm.id, `${env.baseSnapshotName}-${Date.now()}`);
+    const snapshot = await fastVm.snapshot(vm.id, `${SNAPSHOT_PREFIX}-${Date.now()}`);
     console.log(`Created snapshot ${snapshot.id} (${snapshot.name})`);
   } finally {
     await fastVm.remove(vm.id);
