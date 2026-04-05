@@ -30,32 +30,39 @@ export async function handleGitHubWebhook(request: Request, app: AppContext): Pr
   const payload = JSON.parse(rawBody) as GitHubWebhookEnvelope;
   const reviewService = new ReviewService(app);
 
+  async function hasExplicitActivation(): Promise<boolean> {
+    if (!payload.installation || !payload.repository) {
+      return false;
+    }
+
+    const activation = await app.githubInstallations.getRepositoryActivation(
+      payload.installation.id,
+      payload.repository.owner.login,
+      payload.repository.name
+    );
+
+    return activation.isActive;
+  }
+
   switch (eventName) {
     case "installation_repositories": {
-      if (payload.action !== "added" || !payload.installation) {
-        return json({ ok: true, ignored: true });
-      }
-
-      const records = await app.githubInstallations.handleRepositoriesAdded({
-        installation: payload.installation,
-        repositories_added: (payload as GitHubWebhookEnvelope & {
-          repositories_added?: Array<{
-            full_name: string;
-            name: string;
-            owner: { login: string };
-            default_branch: string;
-          }>;
-        }).repositories_added
-      });
-
       return json({
         ok: true,
-        onboarded: records.map((record) => record.repo.fullName)
+        ignored: true,
+        reason: "Installation grants access only. Repositories activate after onboarding commits cloud-agents.md and the reviewer workflow."
       });
     }
     case "pull_request": {
       if (!payload.installation || !payload.repository || !payload.pull_request) {
         return json({ ok: true, ignored: true });
+      }
+
+      if (!await hasExplicitActivation()) {
+        return json({
+          ok: true,
+          ignored: true,
+          reason: "Repository has not explicitly opted in yet"
+        });
       }
 
       switch (payload.action) {
@@ -76,6 +83,14 @@ export async function handleGitHubWebhook(request: Request, app: AppContext): Pr
     case "check_run": {
       if (payload.action !== "rerequested" || !payload.installation || !payload.repository) {
         return json({ ok: true, ignored: true });
+      }
+
+      if (!await hasExplicitActivation()) {
+        return json({
+          ok: true,
+          ignored: true,
+          reason: "Repository has not explicitly opted in yet"
+        });
       }
 
       const prNumber = payload.check_run?.pull_requests?.[0]?.number;

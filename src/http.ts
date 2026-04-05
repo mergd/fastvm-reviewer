@@ -17,3 +17,13 @@ export function text(data: string, init?: ResponseInit): Response {
     headers
   });
 }
+
+export function html(data: string, init?: ResponseInit): Response {
+  const headers = new Headers(init?.headers);
+  headers.set("content-type", "text/html; charset=utf-8");
+
+  return new Response(data, {
+    ...init,
+    headers
+  });
+}

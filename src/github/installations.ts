@@ -2,6 +2,10 @@ import type { RepoRecord, ReviewProfile, SetupDocument } from "../types";
 import type { RepoStore } from "../state/repo-store";
 import { defaultReviewProfile } from "../config/review-profiles";
 import { parseCloudAgentsMarkdown } from "../onboarding/cloud-agents";
+import {
+  CLOUD_AGENTS_PATH,
+  REVIEWER_WORKFLOW_PATH
+} from "../onboarding/reviewer-activation";
 import { normalizeReviewProfile } from "../onboarding/review-profile";
 import { GitHubAppAuth } from "./app-auth";
 
@@ -130,6 +134,117 @@ export class GitHubInstallations {
     }));
   }
 
+  async listInstallationRepositories(installationId: number): Promise<Array<{
+    fullName: string;
+    name: string;
+    owner: string;
+    defaultBranch: string;
+  }>> {
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+    const response = await octokit.rest.apps.listReposAccessibleToInstallation({
+      per_page: 100
+    });
+
+    return response.data.repositories.map((repository) => ({
+      fullName: repository.full_name,
+      name: repository.name,
+      owner: repository.owner.login,
+      defaultBranch: repository.default_branch
+    }));
+  }
+
+  async listInstallationRepositoriesWithActivation(installationId: number): Promise<Array<{
+    fullName: string;
+    name: string;
+    owner: string;
+    defaultBranch: string;
+    activation: {
+      hasCloudAgents: boolean;
+      hasReviewerWorkflow: boolean;
+      isActive: boolean;
+    };
+  }>> {
+    const repositories = await this.listInstallationRepositories(installationId);
+
+    return Promise.all(repositories.map(async (repository) => ({
+      ...repository,
+      activation: await this.getRepositoryActivation(
+        installationId,
+        repository.owner,
+        repository.name
+      )
+    })));
+  }
+
+  async getRepositoryActivation(
+    installationId: number,
+    owner: string,
+    repo: string
+  ): Promise<{
+    hasCloudAgents: boolean;
+    hasReviewerWorkflow: boolean;
+    isActive: boolean;
+  }> {
+    const [cloudAgents, workflow] = await Promise.all([
+      this.fetchTextFile(installationId, owner, repo, CLOUD_AGENTS_PATH, true),
+      this.fetchTextFile(installationId, owner, repo, REVIEWER_WORKFLOW_PATH, true)
+    ]);
+
+    const hasCloudAgents = cloudAgents.trim().length > 0;
+    const hasReviewerWorkflow = workflow.trim().length > 0;
+
+    return {
+      hasCloudAgents,
+      hasReviewerWorkflow,
+      isActive: hasCloudAgents && hasReviewerWorkflow
+    };
+  }
+
+  async listAppInstallations(): Promise<Array<{
+    id: number;
+    accountLogin: string;
+    targetType: string;
+  }>> {
+    return this.auth.listInstallations();
+  }
+
+  async searchRepositoriesWithReviewerWorkflow(
+    installationId: number,
+    accountLogin: string,
+    targetType: string
+  ): Promise<Array<{
+    fullName: string;
+    name: string;
+    owner: string;
+    defaultBranch: string;
+  }>> {
+    const octokit = await this.auth.getInstallationOctokit(installationId);
+    const scopeQualifier = targetType.toLowerCase() === "organization"
+      ? `org:${accountLogin}`
+      : `user:${accountLogin}`;
+    const response = await octokit.request("GET /search/code", {
+      q: `filename:cloud-reviewer.yml path:.github/workflows ${scopeQualifier}`,
+      per_page: 100
+    });
+    const repositories = new Map<string, {
+      fullName: string;
+      name: string;
+      owner: string;
+      defaultBranch: string;
+    }>();
+
+    for (const item of response.data.items) {
+      repositories.set(item.repository.full_name, {
+        fullName: item.repository.full_name,
+        name: item.repository.name,
+        owner: item.repository.owner.login,
+        defaultBranch: item.repository.default_branch ?? "main"
+      });
+    }
+
+    return [...repositories.values()].sort((left, right) => left.fullName.localeCompare(right.fullName));
+  }
+
   async collectSetupDocuments(
     installationId: number,
     owner: string,
@@ -151,12 +266,49 @@ export class GitHubInstallations {
     };
   }
 
+  async upsertTextFile(args: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    path: string;
+    content: string;
+    message: string;
+  }): Promise<void> {
+    const octokit = await this.auth.getInstallationOctokit(args.installationId);
+    let sha: string | undefined;
+
+    try {
+      const existing = await octokit.rest.repos.getContent({
+        owner: args.owner,
+        repo: args.repo,
+        path: args.path
+      });
+
+      if (!Array.isArray(existing.data) && existing.data.type === "file") {
+        sha = existing.data.sha;
+      }
+    } catch (error) {
+      if (!(error instanceof Error && "status" in error && error.status === 404)) {
+        throw error;
+      }
+    }
+
+    await octokit.rest.repos.createOrUpdateFileContents({
+      owner: args.owner,
+      repo: args.repo,
+      path: args.path,
+      message: args.message,
+      content: Buffer.from(args.content, "utf8").toString("base64"),
+      sha
+    });
+  }
+
   private async fetchCloudAgentsProfile(
     installationId: number,
     owner: string,
     repo: string
   ): Promise<Partial<ReviewProfile> | undefined> {
-    const markdown = await this.fetchTextFile(installationId, owner, repo, "cloud-agents.md", true);
+    const markdown = await this.fetchTextFile(installationId, owner, repo, CLOUD_AGENTS_PATH, true);
     if (!markdown) {
       return undefined;
     }

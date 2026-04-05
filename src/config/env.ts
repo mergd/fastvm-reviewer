@@ -5,6 +5,9 @@ export interface EnvConfig {
   privateKey: string;
   openAiApiKey?: string;
   fastVmApiKey: string;
+  fastVmBaseUrl: string;
+  runnerBaseUrl?: string;
+  runnerSharedSecret?: string;
 }
 
 export type EnvSource = Record<string, string | undefined>;
@@ -26,5 +29,8 @@ export function loadEnv(source: EnvSource = Bun.env as EnvSource): EnvConfig {
     privateKey: readRequired(source, "GITHUB_APP_PRIVATE_KEY"),
     openAiApiKey: source.OPENAI_API_KEY,
     fastVmApiKey: readRequired(source, "FASTVM_API_KEY"),
+    fastVmBaseUrl: source.FASTVM_BASE_URL ?? "https://api.fastvm.org",
+    runnerBaseUrl: source.RUNNER_BASE_URL,
+    runnerSharedSecret: source.RUNNER_SHARED_SECRET,
   };
 }

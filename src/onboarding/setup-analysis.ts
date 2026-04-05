@@ -2,6 +2,20 @@ import OpenAI from "openai";
 import type { SetupAnalysis, SetupDocument } from "../types";
 
 const DEFAULT_MODEL = "gpt-5.4";
+const PROFILE_KEYS = [
+  "packageManager",
+  "rootDir",
+  "installCommand",
+  "lintCommand",
+  "typecheckCommand",
+  "testCommand",
+  "appBootCommand",
+  "smokeTestCommand",
+  "envKeys",
+  "vmBaseSnapshot",
+  "vmMachine",
+  "setupNotes"
+] as const;
 
 const SETUP_ANALYSIS_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -11,25 +25,26 @@ const SETUP_ANALYSIS_SCHEMA: Record<string, unknown> = {
     profile: {
       type: "object",
       additionalProperties: false,
+      required: [...PROFILE_KEYS],
       properties: {
         packageManager: {
-          type: "string",
-          enum: ["bun", "npm", "pnpm", "yarn", "unknown"]
+          type: ["string", "null"],
+          enum: ["bun", "npm", "pnpm", "yarn", "unknown", null]
         },
-        rootDir: { type: "string" },
-        installCommand: { type: "string" },
-        lintCommand: { type: "string" },
-        typecheckCommand: { type: "string" },
-        testCommand: { type: "string" },
-        appBootCommand: { type: "string" },
-        smokeTestCommand: { type: "string" },
+        rootDir: { type: ["string", "null"] },
+        installCommand: { type: ["string", "null"] },
+        lintCommand: { type: ["string", "null"] },
+        typecheckCommand: { type: ["string", "null"] },
+        testCommand: { type: ["string", "null"] },
+        appBootCommand: { type: ["string", "null"] },
+        smokeTestCommand: { type: ["string", "null"] },
         envKeys: {
-          type: "array",
+          type: ["array", "null"],
           items: { type: "string" }
         },
-        vmBaseSnapshot: { type: "string" },
-        vmMachine: { type: "string" },
-        setupNotes: { type: "string" }
+        vmBaseSnapshot: { type: ["string", "null"] },
+        vmMachine: { type: ["string", "null"] },
+        setupNotes: { type: ["string", "null"] }
       }
     },
     confidence: {
@@ -65,6 +80,18 @@ function renderDocuments(documents: SetupDocument[]): string {
       "```"
     ].join("\n"))
     .join("\n\n");
+}
+
+function compactNullableProfile(profile: Record<string, unknown>): SetupAnalysis["profile"] {
+  const normalized: SetupAnalysis["profile"] = {};
+
+  for (const [key, value] of Object.entries(profile)) {
+    if (value !== null) {
+      normalized[key as keyof SetupAnalysis["profile"]] = value as never;
+    }
+  }
+
+  return normalized;
 }
 
 export class SetupAnalyzer {
@@ -118,12 +145,14 @@ export class SetupAnalyzer {
       throw new Error("OpenAI Responses API returned no text output");
     }
 
-    const result = JSON.parse(response.output_text) as SetupAnalysis;
+    const result = JSON.parse(response.output_text) as SetupAnalysis & {
+      profile: Record<string, unknown>;
+    };
 
     return {
       ...result,
       profile: {
-        ...result.profile,
+        ...compactNullableProfile(result.profile),
         setupSource: "openai",
       },
     };

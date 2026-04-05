@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { FastVmCommandResult, ReviewerSession } from "../types";
-import { FastVmClient } from "./client";
+import type { FastVmClientLike } from "./runtime-client";
 
 const DEFAULT_BASE_SNAPSHOT = "reviewer-base";
 
 export class SessionManager {
   constructor(
-    private readonly fastVm: FastVmClient,
+    private readonly fastVm: FastVmClientLike,
     private readonly baseSnapshotName: string = DEFAULT_BASE_SNAPSHOT,
   ) {}
 

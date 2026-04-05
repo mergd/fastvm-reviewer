@@ -5,7 +5,7 @@ const SNAPSHOT_PREFIX = "reviewer-base";
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const fastVm = new FastVmClient(env.fastVmApiKey);
+  const fastVm = new FastVmClient(env.fastVmApiKey, env.fastVmBaseUrl);
   const vm = await fastVm.launch("c1m2", `${SNAPSHOT_PREFIX}-builder-${Date.now()}`);
 
   try {
@@ -13,8 +13,7 @@ async function main(): Promise<void> {
       "apt-get update",
       "apt-get install -y git curl unzip tmux python3 python3-pip ripgrep",
       "curl -fsSL https://bun.sh/install | bash",
-      "export BUN_INSTALL=/root/.bun && export PATH=$BUN_INSTALL/bin:$PATH && bun --version",
-      "pip3 install fastvm"
+      "export BUN_INSTALL=/root/.bun && export PATH=$BUN_INSTALL/bin:$PATH && bun --version"
     ];
 
     for (const command of commands) {

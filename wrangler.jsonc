@@ -8,6 +8,13 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reviewer-onboarding",
+      "database_id": "31cd6f92-b8f4-46e9-b0af-d387cc9e9017"
+    }
+  ],
   "triggers": {
     "crons": ["0 * * * *"]
   }

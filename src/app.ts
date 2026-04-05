@@ -1,5 +1,5 @@
 import { loadEnv, type EnvConfig, type EnvSource } from "./config/env";
-import { FastVmClient } from "./fastvm/client";
+import type { FastVmClientLike } from "./fastvm/runtime-client";
 import { SessionManager } from "./fastvm/session-manager";
 import { GitHubAppAuth } from "./github/app-auth";
 import { GitHubCheckRuns } from "./github/check-runs";
@@ -12,7 +12,7 @@ import { InMemoryRepoStore } from "./state/repo-store";
 export interface AppContext {
   env: EnvConfig;
   store: InMemoryRepoStore;
-  fastVm: FastVmClient;
+  fastVm: FastVmClientLike;
   sessions: SessionManager;
   githubAuth: GitHubAppAuth;
   githubInstallations: GitHubInstallations;
@@ -22,7 +22,7 @@ export interface AppContext {
   setupAnalyzer: SetupAnalyzer;
 }
 
-export function createAppContext(source?: EnvSource): AppContext {
+export function createAppContext(source: EnvSource | undefined, fastVm: FastVmClientLike): AppContext {
   const env = loadEnv(source);
   const store = new InMemoryRepoStore();
   const githubAuth = new GitHubAppAuth(env);
@@ -31,7 +31,6 @@ export function createAppContext(source?: EnvSource): AppContext {
   const githubCheckRuns = new GitHubCheckRuns(githubAuth);
   const githubReviewComments = new GitHubReviewComments(githubAuth);
   const setupAnalyzer = new SetupAnalyzer(env.openAiApiKey);
-  const fastVm = new FastVmClient(env.fastVmApiKey);
   const sessions = new SessionManager(fastVm);
 
   return {
