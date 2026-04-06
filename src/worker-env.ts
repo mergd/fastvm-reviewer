@@ -8,4 +8,5 @@ export interface WorkerEnv {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   DB?: D1DatabaseLike;
+  ASSETS: { fetch: (request: Request) => Promise<Response> };
 }

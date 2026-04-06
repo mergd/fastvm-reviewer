@@ -5,23 +5,34 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/server.ts",
+    "dev:ui": "vite",
     "dev:worker": "wrangler dev",
     "start": "bun src/server.ts",
     "setup:wizard": "bun src/cli/setup.ts",
     "typecheck": "tsc --noEmit",
+    "typecheck:ui": "tsc --noEmit -p frontend/tsconfig.json",
+    "build:ui": "vite build",
     "build:snapshot": "bun scripts/build-reviewer-snapshot.ts",
     "cf:check": "wrangler check",
-    "cf:deploy": "wrangler deploy"
+    "cf:deploy": "bun run build:ui && wrangler deploy"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
     "typescript": "latest",
+    "vite": "^8.0.3",
     "wrangler": "^4.80.0"
   },
   "dependencies": {
+    "@base-ui/react": "^1.3.0",
     "@octokit/webhooks": "^14.2.0",
     "hono": "^4.12.10",
     "octokit": "^5.0.5",
-    "openai": "^6.33.0"
+    "openai": "^6.33.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.14.0"
   }
 }

@@ -12,14 +12,12 @@ import type { EnvSource } from "./config/env";
 import { UnavailableFastVmClient } from "./fastvm/unavailable-client";
 import { OnboardingStore } from "./onboarding/d1-store";
 import type { OnboardingValidationResult } from "./onboarding/types";
-import { renderGitHubDashboardPage } from "./routes/github-dashboard-page";
 import {
   handleApproveOnboardingDraft,
   handleGetOnboardingDraft,
   handleListOnboardingRepositories,
   handleValidateOnboardingDraft
 } from "./routes/onboarding-api";
-import { renderGitHubSetupPage } from "./routes/github-setup-page";
 import type { WorkerEnv } from "./worker-env";
 
 type WorkerAppEnv = {
@@ -242,6 +240,10 @@ async function listDashboardPendingRepos(
   return pendingGroups.flat().sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
+function serveAppShell(c: Context<WorkerAppEnv>): Promise<Response> {
+  return c.env.ASSETS.fetch(new Request(new URL("/index.html", c.req.url).toString()));
+}
+
 export default {
   fetch: (() => {
     const app = new Hono<WorkerAppEnv>();
@@ -255,6 +257,8 @@ export default {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
     });
 
+    app.get("/", (c) => c.redirect("/dashboard"));
+
     app.get("/health", (c) => {
       return c.json({
         ok: true,
@@ -264,18 +268,32 @@ export default {
       });
     });
 
-    app.get("/dashboard", async (c) => {
-      const session = oauthConfigured(c.env) ? await loadGitHubSession(c) : undefined;
+    app.get("/dashboard", (c) => serveAppShell(c));
+
+    app.get("/api/dashboard", async (c) => {
+      const configured = oauthConfigured(c.env);
+      const session = configured ? await loadGitHubSession(c) : undefined;
       const pendingRepos = session
         ? await listDashboardPendingRepos(c.get("appContext"), c.env, session, c.req.url)
         : [];
 
-      return c.html(renderGitHubDashboardPage({
-        oauthConfigured: oauthConfigured(c.env),
-        session,
-        pendingRepos
-      }));
+      return c.json({
+        oauthConfigured: configured,
+        callbackUrl: githubRedirectUri(c.req.url),
+        loggedIn: Boolean(session),
+        login: session?.login,
+        avatarUrl: session?.avatarUrl,
+        pendingRepos,
+      });
     });
+
+    app.get("/api/setup/config", (c) =>
+      c.json({
+        runnerConfigured: Boolean(c.env.RUNNER_BASE_URL),
+        storageConfigured: Boolean(c.env.DB),
+        encryptionConfigured: Boolean(c.env.ONBOARDING_ENCRYPTION_KEY),
+      })
+    );
 
     app.get("/auth/github/login", async (c) => {
       if (!oauthConfigured(c.env)) {
@@ -333,13 +351,7 @@ export default {
       return c.redirect("/dashboard");
     });
 
-    app.get("/setup/github", (c) => {
-      return c.html(renderGitHubSetupPage(new URL(c.req.url), {
-        runnerConfigured: Boolean(c.env.RUNNER_BASE_URL),
-        storageConfigured: Boolean(c.env.DB),
-        encryptionConfigured: Boolean(c.env.ONBOARDING_ENCRYPTION_KEY)
-      }));
-    });
+    app.get("/setup/github", (c) => serveAppShell(c));
 
     app.get("/api/setup/github/repositories", async (c) => {
       const installationId = Number(c.req.query("installation_id"));

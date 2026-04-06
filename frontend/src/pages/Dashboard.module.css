@@ -1,0 +1,191 @@
+.shell {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.header {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 8px 0 4px;
+}
+
+.desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.userName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.userMeta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.repoGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.repo {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  transition: border-color 120ms ease;
+}
+
+.repo:hover {
+  border-color: var(--border-2);
+}
+
+.repoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.repoName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.repoPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.loginBlock {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.loginBlockHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.loginTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.loginSubtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.prereqList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.prereqTitle {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.prereqItem {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.prereqCheck {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--success);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.prereqWarn {
+  color: var(--warning);
+}
+
+.prereqCallbackUrl {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  margin: 5px 0;
+  word-break: break-all;
+}
+
+.prereqHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.prereqHint strong {
+  color: var(--text);
+}
+
+.loading {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 24px 0;
+}
