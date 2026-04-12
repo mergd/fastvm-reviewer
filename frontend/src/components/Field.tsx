@@ -1,3 +1,4 @@
+import { CaretDown } from "@phosphor-icons/react";
 import { Field as BaseField } from "@base-ui/react/field";
 import { Input } from "@base-ui/react/input";
 import type { ChangeEvent } from "react";
@@ -51,15 +52,18 @@ export function Field({ id, label, className, ...props }: Props) {
           disabled={props.disabled}
         />
       ) : props.type === "select" ? (
-        <select
-          id={id}
-          className={styles.select}
-          value={props.value}
-          onChange={(e: ChangeEvent<HTMLSelectElement>) => props.onChange(e.target.value)}
-          disabled={props.disabled}
-        >
-          {props.children}
-        </select>
+        <div className={styles.selectWrapper}>
+          <select
+            id={id}
+            className={styles.select}
+            value={props.value}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => props.onChange(e.target.value)}
+            disabled={props.disabled}
+          >
+            {props.children}
+          </select>
+          <CaretDown size={12} className={styles.selectIcon} weight="bold" />
+        </div>
       ) : (
         <Input
           id={id}

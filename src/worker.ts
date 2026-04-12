@@ -180,6 +180,30 @@ async function exchangeGitHubCode(env: WorkerEnv, code: string, redirectUri: str
   return payload.access_token;
 }
 
+function parseSortableTimestamp(value: string | null | undefined): number {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+}
+
+function getLatestTimestamp(...values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+
+  for (const value of values) {
+    const time = parseSortableTimestamp(value);
+    if (time > latestTime) {
+      latest = value ?? null;
+      latestTime = time;
+    }
+  }
+
+  return latest;
+}
+
 async function listDashboardPendingRepos(
   appContext: AppContext,
   env: WorkerEnv,
@@ -189,8 +213,13 @@ async function listDashboardPendingRepos(
   fullName: string;
   installationId: number;
   setupUrl: string;
+  hasReviewerWorkflow: boolean;
   hasCloudAgents: boolean;
   hasApprovedProfile: boolean;
+  lastTouchedAt: string | null;
+  description: string | null;
+  htmlUrl: string;
+  isFork: boolean;
 }>> {
   const visibleAccounts = new Set([session.login, ...session.organizations]);
   const installations = await appContext.githubInstallations.listAppInstallations();
@@ -201,7 +230,8 @@ async function listDashboardPendingRepos(
     installations
       .filter((installation) => installation.accountLogin && visibleAccounts.has(installation.accountLogin))
       .map(async (installation) => {
-        const [repositories, storedRecords] = await Promise.all([
+        const [allRepositories, workflowRepositories, storedRecords] = await Promise.all([
+          appContext.githubInstallations.listInstallationRepositories(installation.id),
           appContext.githubInstallations.searchRepositoriesWithReviewerWorkflow(
             installation.id,
             installation.accountLogin,
@@ -209,35 +239,77 @@ async function listDashboardPendingRepos(
           ),
           store?.listRepositoriesForInstallation(installation.id) ?? Promise.resolve([])
         ]);
-        const storedByName = new Map(storedRecords.map((record) => [record.repo.fullName, record]));
-        const repositoriesWithActivation = await Promise.all(repositories.map(async (repository) => ({
-          repository,
-          activation: await appContext.githubInstallations.getRepositoryActivation(
-            installation.id,
-            repository.owner,
-            repository.name
-          )
-        })));
 
-        return repositoriesWithActivation
+        const workflowRepoNames = new Set(workflowRepositories.map((r) => r.fullName));
+        const allRepositoriesByName = new Map(allRepositories.map((repository) => [
+          repository.fullName,
+          repository
+        ]));
+        const storedByName = new Map(storedRecords.map((record) => [record.repo.fullName, record]));
+
+        const makeSetupUrl = (fullName: string) =>
+          new URL(
+            `/setup/github?installation_id=${installation.id}&repo=${encodeURIComponent(fullName)}`,
+            `${baseUrl.protocol}//${baseUrl.host}`
+          ).toString();
+
+        const repositoriesWithActivation = await Promise.all(
+          workflowRepositories.map(async (repository) => ({
+            repository,
+            activation: await appContext.githubInstallations.getRepositoryActivation(
+              installation.id,
+              repository.owner,
+              repository.name
+            )
+          }))
+        );
+
+        const partialRepos = repositoriesWithActivation
           .filter(({ repository, activation }) => {
             const stored = storedByName.get(repository.fullName);
-            return activation.hasReviewerWorkflow && (!activation.hasCloudAgents || !stored?.approvedProfile);
+            return !activation.hasCloudAgents || !stored?.approvedProfile;
           })
-          .map(({ repository, activation }) => ({
+          .map(({ repository, activation }) => {
+            const stored = storedByName.get(repository.fullName);
+            const repositoryMeta = allRepositoriesByName.get(repository.fullName);
+
+            return {
+              fullName: repository.fullName,
+              installationId: installation.id,
+              setupUrl: makeSetupUrl(repository.fullName),
+              hasReviewerWorkflow: true,
+              hasCloudAgents: activation.hasCloudAgents,
+              hasApprovedProfile: Boolean(stored?.approvedProfile),
+              lastTouchedAt: getLatestTimestamp(stored?.updatedAt, repositoryMeta?.updatedAt),
+              description: repositoryMeta?.description ?? null,
+              htmlUrl: repositoryMeta?.htmlUrl ?? `https://github.com/${repository.fullName}`,
+              isFork: repositoryMeta?.isFork ?? false
+            };
+          });
+
+        const notStartedRepos = allRepositories
+          .filter((repository) => !workflowRepoNames.has(repository.fullName))
+          .map((repository) => ({
             fullName: repository.fullName,
             installationId: installation.id,
-            setupUrl: new URL(
-              `/setup/github?installation_id=${installation.id}&repo=${encodeURIComponent(repository.fullName)}`,
-              `${baseUrl.protocol}//${baseUrl.host}`
-            ).toString(),
-            hasCloudAgents: activation.hasCloudAgents,
-            hasApprovedProfile: Boolean(storedByName.get(repository.fullName)?.approvedProfile)
+            setupUrl: makeSetupUrl(repository.fullName),
+            hasReviewerWorkflow: false,
+            hasCloudAgents: false,
+            hasApprovedProfile: false,
+            lastTouchedAt: repository.updatedAt,
+            description: repository.description,
+            htmlUrl: repository.htmlUrl,
+            isFork: repository.isFork
           }));
+
+        return [...partialRepos, ...notStartedRepos];
       })
   );
 
-  return pendingGroups.flat().sort((left, right) => left.fullName.localeCompare(right.fullName));
+  return pendingGroups.flat().sort((left, right) =>
+    parseSortableTimestamp(right.lastTouchedAt) - parseSortableTimestamp(left.lastTouchedAt) ||
+    left.fullName.localeCompare(right.fullName)
+  );
 }
 
 function serveAppShell(c: Context<WorkerAppEnv>): Promise<Response> {
@@ -260,26 +332,18 @@ export default {
     app.get("/", (c) => c.redirect("/dashboard"));
 
     app.get("/health", (c) => {
-      return c.json({
-        ok: true,
-        runnerConfigured: Boolean(c.env.RUNNER_BASE_URL),
-        storageConfigured: Boolean(c.env.DB),
-        githubOAuthConfigured: oauthConfigured(c.env)
-      });
+      return c.json({ ok: true });
     });
 
     app.get("/dashboard", (c) => serveAppShell(c));
 
     app.get("/api/dashboard", async (c) => {
-      const configured = oauthConfigured(c.env);
-      const session = configured ? await loadGitHubSession(c) : undefined;
+      const session = oauthConfigured(c.env) ? await loadGitHubSession(c) : undefined;
       const pendingRepos = session
         ? await listDashboardPendingRepos(c.get("appContext"), c.env, session, c.req.url)
         : [];
 
       return c.json({
-        oauthConfigured: configured,
-        callbackUrl: githubRedirectUri(c.req.url),
         loggedIn: Boolean(session),
         login: session?.login,
         avatarUrl: session?.avatarUrl,
@@ -287,13 +351,45 @@ export default {
       });
     });
 
-    app.get("/api/setup/config", (c) =>
-      c.json({
-        runnerConfigured: Boolean(c.env.RUNNER_BASE_URL),
-        storageConfigured: Boolean(c.env.DB),
-        encryptionConfigured: Boolean(c.env.ONBOARDING_ENCRYPTION_KEY),
-      })
-    );
+    app.get("/api/setup/config", (c) => c.json({ ok: true }));
+
+    app.get("/api/setup/session", async (c) => {
+      if (!oauthConfigured(c.env)) {
+        return c.json({ loggedIn: false });
+      }
+
+      const session = await loadGitHubSession(c);
+      if (!session) {
+        return c.json({ loggedIn: false, reason: "not_authenticated" });
+      }
+
+      const appContext = c.get("appContext");
+      const visibleAccounts = new Set([session.login, ...session.organizations]);
+      const installations = await appContext.githubInstallations.listAppInstallations();
+      const visible = installations.filter(
+        (i) => i.accountLogin && visibleAccounts.has(i.accountLogin)
+      );
+
+      const installationsWithRepos = await Promise.all(
+        visible.map(async (installation) => ({
+          id: installation.id,
+          account: installation.accountLogin,
+          repositories: await appContext.githubInstallations.listInstallationRepositories(installation.id)
+        }))
+      );
+
+      return c.json({
+        loggedIn: true,
+        login: session.login,
+        avatarUrl: session.avatarUrl,
+        config: {
+          runnerConfigured: Boolean(c.env.RUNNER_BASE_URL),
+          storageConfigured: Boolean(c.env.DB),
+          encryptionConfigured: Boolean(c.env.ONBOARDING_ENCRYPTION_KEY),
+        },
+        installations: installationsWithRepos,
+      });
+    });
 
     app.get("/auth/github/login", async (c) => {
       if (!oauthConfigured(c.env)) {
@@ -382,6 +478,18 @@ export default {
         await c.req.json(),
         (payload) => requestRunnerJson<OnboardingValidationResult>(c.env, "/internal/onboarding/validate", payload)
       );
+    });
+
+    app.post("/api/setup/github/validate-stream", async (c) => {
+      return proxyToRunner(c.req.raw, c.env, "/internal/onboarding/validate-stream", await c.req.text());
+    });
+
+    app.post("/api/setup/github/exec", async (c) => {
+      return proxyToRunner(c.req.raw, c.env, "/internal/onboarding/exec", await c.req.text());
+    });
+
+    app.post("/api/setup/github/chat", async (c) => {
+      return proxyToRunner(c.req.raw, c.env, "/internal/onboarding/chat", await c.req.text());
     });
 
     app.post("/api/setup/github/approve", async (c) => {

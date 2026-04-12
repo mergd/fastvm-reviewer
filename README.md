@@ -86,7 +86,7 @@ RUNNER_SHARED_SECRET=replace-me
 7. For the GitHub App setup screen, use:
 
 ```sh
-Setup URL: https://fastvm-pr-reviewer-api.fldr.workers.dev/setup/github
+Setup URL: https://reviewer.yet-to-be.com/setup/github
 ```
 
 8. For the optional dashboard that shows repos with the reviewer workflow but incomplete onboarding, configure:
@@ -94,7 +94,7 @@ Setup URL: https://fastvm-pr-reviewer-api.fldr.workers.dev/setup/github
 ```sh
 GITHUB_CLIENT_ID=Iv1.replace-me
 GITHUB_CLIENT_SECRET=replace-me
-Dashboard URL: https://fastvm-pr-reviewer-api.fldr.workers.dev/dashboard
+Dashboard URL: https://reviewer.yet-to-be.com/dashboard
 ```
 
 ## HTTP Endpoints

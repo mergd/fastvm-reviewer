@@ -1,134 +1,129 @@
-.shell {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 40px 24px 80px;
+.page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
 }
 
-.header {
-  margin-bottom: 24px;
-  padding-bottom: 20px;
+.topbar {
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
-}
-
-.logoRow {
+  padding: 0 16px;
+  height: 48px;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
-}
-
-.title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 8px 0 4px;
-}
-
-.desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.55;
-}
-
-.statusGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-  margin-bottom: 24px;
-}
-
-.statusItem {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.statusDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
   flex-shrink: 0;
 }
 
-.statusDotOk   { background: var(--success); }
-.statusDotFail { background: var(--danger); }
+.topbarName {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.1px;
+}
 
-.statusLabel {
+.topbarSep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.repoPicker {
+  appearance: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
   font-size: 12px;
+  padding: 5px 28px 5px 10px;
+  cursor: pointer;
+  outline: none;
+  max-width: 320px;
+  transition: border-color 120ms ease;
+}
+
+.repoPicker:focus {
+  border-color: var(--primary);
+}
+
+.topbarRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbarUser {
+  font-size: 12px;
+  color: var(--text-muted);
   font-weight: 500;
+}
+
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 280px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chatArea {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.configArea {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+}
+
+.terminalArea {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.loginNotice {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.loginCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  max-width: 380px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.loginTitle {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text);
 }
 
-.statusValue {
-  font-size: 11px;
+.loginDesc {
+  font-size: 13px;
   color: var(--text-muted);
-  margin-top: 1px;
-}
-
-.section {
-  margin-bottom: 20px;
-}
-
-.sectionTitle {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.formGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
-}
-
-.formGrid3 {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.secretGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
-}
-
-.resultsGrid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.codeBlock {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 12px 14px;
-  overflow: auto;
-  max-height: 300px;
-}
-
-.codeLabel {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+  line-height: 1.6;
 }

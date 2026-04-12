@@ -1,0 +1,62 @@
+---
+description: Project conventions and architecture for the Reviewer app
+globs:
+alwaysApply: true
+---
+
+# Reviewer — Project Conventions
+
+## Domain & URLs
+
+- Production domain: `reviewer.yet-to-be.com`
+- Never hardcode `*.workers.dev` URLs in user-facing code or docs
+
+## Architecture
+
+Two-process split deployment:
+
+| Layer | Runtime | Entrypoint | Hosted on |
+|-------|---------|------------|-----------|
+| Worker (ingress + static assets) | Cloudflare Workers | `src/worker.ts` | Cloudflare |
+| Runner (heavy compute, VMs, AI) | Bun | `src/server.ts` | Railway |
+
+Both share the same Hono app (`src/app.ts`). The Worker verifies GitHub webhooks and proxies to the Runner via `RUNNER_BASE_URL` + `RUNNER_SHARED_SECRET`.
+
+## Frontend
+
+- React 19 SPA in `frontend/src/`, built with Vite, served as static assets by the Worker
+- **Component library**: `@base-ui/react` — prefer this over hand-rolling primitives
+- **Icons**: `@phosphor-icons/react` — never inline SVGs unless explicitly told to
+- **Styling**: CSS Modules (`.module.css`) with design tokens from `frontend/src/styles/tokens.css`
+  - Never use inline styles — define everything via CSS classes
+  - Prefer token variables (`var(--primary)`, `var(--radius)`) over raw values
+- **Imports**: named imports at the top of file — no `React.useEffect`, no dynamic imports unless explicitly needed
+- Light mode is the default color scheme
+
+## Backend
+
+- Hono framework, TypeScript, strict mode
+- Two tsconfigs: root (`jsxImportSource: "hono/jsx"`) and `frontend/tsconfig.json` (`jsxImportSource: "react"`)
+- D1 (Cloudflare) for persistence — migration-first approach, never push migrations without explicit approval
+- FastVM for sandboxed VM execution
+- OpenAI SDK for AI features (streaming via SSE)
+
+## Database
+
+- D1 migrations live in `migrations/`
+- Always create a migration file — never apply schema changes directly
+- Never run or push migrations unless explicitly asked
+
+## Dev servers
+
+- `bun run dev` — Bun runner on `:3000`
+- `bun run dev:worker` — Wrangler Worker on `:8787`
+- `bun run dev:ui` — Vite dev server on `:5173` (proxies `/api`, `/auth`, `/health`, `/webhooks` → `:8787`)
+- `bun run cf:deploy` — builds UI + deploys Worker
+
+## Code style
+
+- Keep files focused — break out reusable code into separate modules
+- Minimal comments — only explain non-obvious intent
+- Exhaustive switch handling for TypeScript unions/enums
+- No dev-setup hints or config diagnostics in production UI — handle missing config silently or fail at the API level

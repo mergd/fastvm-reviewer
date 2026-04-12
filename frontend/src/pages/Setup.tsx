@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
-import { Field } from "../components/Field";
+import { ChatPanel, type ChatMessage } from "../components/ChatPanel";
+import { ConfigPanel, emptyProfile, type Profile } from "../components/ConfigPanel";
 import { Logo } from "../components/Logo";
-import { Notice } from "../components/Notice";
+import { TerminalPanel, createTab, type TerminalTab } from "../components/TerminalPanel";
 import styles from "./Setup.module.css";
 
 type SetupConfig = {
@@ -12,45 +13,24 @@ type SetupConfig = {
   encryptionConfigured: boolean;
 };
 
-type Repository = {
-  fullName: string;
-  onboarding?: {
-    approvedProfile?: unknown;
-    validation?: { status: string };
-  };
+type Installation = {
+  id: number;
+  account: string;
+  repositories: Array<{
+    fullName: string;
+    name: string;
+    owner: string;
+    defaultBranch: string;
+  }>;
 };
 
-type Profile = {
-  rootDir: string;
-  vmBaseSnapshot: string;
-  vmMachine: string;
-  installCommand: string;
-  lintCommand: string;
-  typecheckCommand: string;
-  testCommand: string;
-  appBootCommand: string;
-  smokeTestCommand: string;
-  envKeys: string;
-  setupNotes: string;
-};
-
-type StatusState = {
-  kind: "default" | "warning" | "error" | "success";
-  message: string;
-};
-
-const emptyProfile: Profile = {
-  rootDir: "",
-  vmBaseSnapshot: "",
-  vmMachine: "",
-  installCommand: "",
-  lintCommand: "",
-  typecheckCommand: "",
-  testCommand: "",
-  appBootCommand: "",
-  smokeTestCommand: "",
-  envKeys: "",
-  setupNotes: "",
+type SessionData = {
+  loggedIn: boolean;
+  reason?: string;
+  login?: string;
+  avatarUrl?: string;
+  config?: SetupConfig;
+  installations?: Installation[];
 };
 
 function buildProfilePayload(profile: Profile) {
@@ -74,79 +54,45 @@ function buildProfilePayload(profile: Profile) {
 
 export function SetupPage() {
   const params = new URLSearchParams(window.location.search);
-  const initialInstallId = params.get("installation_id") ?? "";
   const initialRepo = params.get("repo") ?? "";
 
-  const [config, setConfig] = useState<SetupConfig | null>(null);
-  const [installationId, setInstallationId] = useState(initialInstallId);
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [selectedRepo, setSelectedRepo] = useState("");
+  const [session, setSession] = useState<SessionData | null>(null);
+  const [selectedRepo, setSelectedRepo] = useState(initialRepo);
   const [profile, setProfile] = useState<Profile>(emptyProfile);
-  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
-  const [status, setStatus] = useState<StatusState>({
-    kind: "default",
-    message: "Select a repository and load a draft to begin.",
-  });
-  const [rootFiles, setRootFiles] = useState("(not loaded)");
-  const [cloudAgents, setCloudAgents] = useState("(not generated)");
-  const [validationLogs, setValidationLogs] = useState("(no validation yet)");
   const [loading, setLoading] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [vmSessionId, setVmSessionId] = useState<string | null>(null);
+
+  const termRef = useRef<{ write: (data: string) => void; addTab: (label: string) => TerminalTab } | null>(null);
 
   useEffect(() => {
-    fetch("/api/setup/config")
+    fetch("/api/setup/session")
       .then((r) => r.json())
-      .then((d) => setConfig(d as SetupConfig));
+      .then((d) => setSession(d as SessionData));
   }, []);
 
+  const allRepos = session?.installations?.flatMap((i) =>
+    i.repositories.map((r) => ({ ...r, installationId: i.id }))
+  ) ?? [];
+
+  const selectedRepoData = allRepos.find((r) => r.fullName === selectedRepo);
+
   useEffect(() => {
-    if (initialInstallId) void loadRepositories(initialInstallId);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!selectedRepo || !selectedRepoData) return;
+    loadDraft(selectedRepoData.installationId, selectedRepo);
+  }, [selectedRepo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const envKeys = profile.envKeys.split(/\n+/).map((s) => s.trim()).filter(Boolean);
-
-  async function loadRepositories(id = installationId) {
-    if (!id.trim()) {
-      setStatus({ kind: "error", message: "Enter an installation ID first." });
-      return;
-    }
-    setLoading(true);
-    setStatus({ kind: "warning", message: "Loading installation repositories…" });
-    try {
-      const r = await fetch(`/api/setup/github/repositories?installation_id=${encodeURIComponent(id.trim())}`);
-      const payload = await r.json() as { repositories?: Repository[]; error?: string };
-      if (!r.ok) throw new Error(payload.error ?? "Failed to load repositories.");
-      setRepositories(payload.repositories ?? []);
-      if (initialRepo && payload.repositories?.find((repo) => repo.fullName === initialRepo)) {
-        setSelectedRepo(initialRepo);
-        await loadDraft(id, initialRepo);
-        return;
-      }
-      setStatus({ kind: "success", message: "Repositories loaded. Select one and load its draft." });
-    } catch (e: unknown) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Failed to load." });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadDraft(id = installationId, repo = selectedRepo) {
-    if (!id.trim() || !repo) {
-      setStatus({ kind: "error", message: "Select an installation and repository first." });
-      return;
-    }
-    setLoading(true);
-    setStatus({ kind: "warning", message: "Detecting repo draft…" });
+  async function loadDraft(installationId: number, repo: string) {
     try {
       const r = await fetch(
-        `/api/setup/github/draft?installation_id=${encodeURIComponent(id.trim())}&repo=${encodeURIComponent(repo)}`
+        `/api/setup/github/draft?installation_id=${installationId}&repo=${encodeURIComponent(repo)}`
       );
       const payload = await r.json() as {
-        repository?: { draftProfile?: Partial<Profile>; approvedProfile?: Partial<Profile>; validation?: unknown };
-        rootFiles?: string[];
-        cloudAgentsMarkdown?: string;
+        repository?: { draftProfile?: Partial<Profile>; approvedProfile?: Partial<Profile> };
         error?: string;
       };
-      if (!r.ok) throw new Error(payload.error ?? "Failed to load draft.");
+      if (!r.ok) return;
       const draft = payload.repository?.draftProfile ?? payload.repository?.approvedProfile ?? {};
       setProfile({
         rootDir: draft.rootDir ?? "",
@@ -161,246 +107,327 @@ export function SetupPage() {
         envKeys: Array.isArray(draft.envKeys) ? (draft.envKeys as string[]).join("\n") : (draft.envKeys ?? ""),
         setupNotes: draft.setupNotes ?? "",
       });
-      setRootFiles((payload.rootFiles ?? []).join("\n") || "(none)");
-      setCloudAgents(payload.cloudAgentsMarkdown ?? "(not generated)");
-      setValidationLogs(
-        payload.repository?.validation ? JSON.stringify(payload.repository.validation, null, 2) : "(no validation yet)"
-      );
-      setStatus({ kind: "success", message: "Draft loaded. Edit commands and provide any secret values before validation." });
-    } catch (e: unknown) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Failed to load." });
-    } finally {
-      setLoading(false);
+    } catch {
+      // silently fail, user can still fill manually
     }
   }
 
-  async function validate() {
-    if (!installationId.trim() || !selectedRepo) {
-      setStatus({ kind: "error", message: "Select an installation and repository first." });
-      return;
-    }
+  const handleValidate = useCallback(async () => {
+    if (!selectedRepoData) return;
     setLoading(true);
-    setStatus({ kind: "warning", message: "Running validation on the Railway runner…" });
+
+    const tab = createTab(`validate`);
+    termRef.current?.addTab(tab.label);
+
     try {
-      const r = await fetch("/api/setup/github/validate", {
+      const response = await fetch("/api/setup/github/validate-stream", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          installationId: Number(installationId.trim()),
-          repoFullName: selectedRepo,
+          installationId: selectedRepoData.installationId,
+          owner: selectedRepoData.owner,
+          repo: selectedRepoData.name,
+          defaultBranch: selectedRepoData.defaultBranch,
           profile: buildProfilePayload(profile),
-          secrets: secretValues,
+          secrets: {},
         }),
       });
-      const payload = await r.json() as { validation?: { generatedCloudAgents?: string; status?: string; summary?: string }; error?: string };
-      if (!r.ok) throw new Error(payload.error ?? "Validation failed to start.");
-      setCloudAgents(payload.validation?.generatedCloudAgents ?? "(not generated)");
-      setValidationLogs(JSON.stringify(payload.validation, null, 2));
-      setStatus({
-        kind: payload.validation?.status === "passed" ? "success" : "error",
-        message: payload.validation?.summary ?? "Validation finished.",
-      });
-    } catch (e: unknown) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Failed." });
+
+      if (!response.ok || !response.body) {
+        tab.terminal.writeln(`\x1b[31mError: ${response.statusText}\x1b[0m`);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+            handleSSEEvent(tab, eventType, data);
+          }
+        }
+      }
+    } catch (e) {
+      tab.terminal.writeln(`\x1b[31mError: ${e instanceof Error ? e.message : String(e)}\x1b[0m`);
     } finally {
       setLoading(false);
     }
+  }, [selectedRepoData, profile]);
+
+  function handleSSEEvent(tab: TerminalTab, event: string, data: Record<string, unknown>) {
+    switch (event) {
+      case "status":
+        tab.terminal.writeln(`\x1b[90m${data.message}\x1b[0m`);
+        break;
+      case "session":
+        setVmSessionId(data.sessionId as string);
+        break;
+      case "step:start":
+        tab.terminal.writeln(`\n\x1b[34m▸ ${data.name}\x1b[0m`);
+        if (data.command) {
+          tab.terminal.writeln(`\x1b[90m  $ ${(data.command as string).slice(0, 200)}\x1b[0m`);
+        }
+        break;
+      case "step:complete": {
+        const status = data.status as string;
+        const color = status === "passed" ? "32" : status === "failed" ? "31" : "33";
+        const dur = data.durationMs ? ` (${((data.durationMs as number) / 1000).toFixed(1)}s)` : "";
+        tab.terminal.writeln(`\x1b[${color}m  ${status}${dur}\x1b[0m`);
+        if (data.stdout) {
+          const stdout = (data.stdout as string).trim();
+          if (stdout) {
+            for (const line of stdout.split("\n").slice(-20)) {
+              tab.terminal.writeln(`  ${line}`);
+            }
+          }
+        }
+        if (data.stderr && data.status === "failed") {
+          const stderr = (data.stderr as string).trim();
+          if (stderr) {
+            for (const line of stderr.split("\n").slice(-10)) {
+              tab.terminal.writeln(`\x1b[31m  ${line}\x1b[0m`);
+            }
+          }
+        }
+        break;
+      }
+      case "done": {
+        const result = data as { status?: string; summary?: string };
+        const passed = result.status === "passed";
+        tab.terminal.writeln(`\n\x1b[${passed ? "32" : "31"}m━━━ ${passed ? "Validation passed" : "Validation failed"}\x1b[0m`);
+        if (result.summary) {
+          tab.terminal.writeln(`\x1b[90m${result.summary}\x1b[0m`);
+        }
+        break;
+      }
+    }
   }
 
-  async function approve() {
-    if (!installationId.trim() || !selectedRepo) {
-      setStatus({ kind: "error", message: "Select an installation and repository first." });
-      return;
-    }
+  const handleActivate = useCallback(async () => {
+    if (!selectedRepoData) return;
     setLoading(true);
-    setStatus({ kind: "warning", message: "Activating the repository and committing reviewer files…" });
     try {
       const r = await fetch("/api/setup/github/approve", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          installationId: Number(installationId.trim()),
+          installationId: selectedRepoData.installationId,
           repoFullName: selectedRepo,
           profile: buildProfilePayload(profile),
         }),
       });
-      const payload = await r.json() as { cloudAgentsMarkdown?: string; error?: string };
-      if (!r.ok) throw new Error(payload.error ?? "Failed to commit cloud-agents.md.");
-      if (payload.cloudAgentsMarkdown) setCloudAgents(payload.cloudAgentsMarkdown);
-      setStatus({ kind: "success", message: "Repository activated. cloud-agents.md and the reviewer workflow are now committed." });
-    } catch (e: unknown) {
-      setStatus({ kind: "error", message: e instanceof Error ? e.message : "Failed." });
+      const payload = await r.json() as { error?: string };
+      if (!r.ok) throw new Error(payload.error ?? "Activation failed.");
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: `Repository activated. \`cloud-agents.md\` and the reviewer workflow have been committed to ${selectedRepo}.`
+      }]);
+    } catch (e) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: `Activation failed: ${e instanceof Error ? e.message : String(e)}`
+      }]);
     } finally {
       setLoading(false);
     }
+  }, [selectedRepoData, selectedRepo, profile]);
+
+  const handleExec = useCallback(async (command: string) => {
+    if (!vmSessionId) {
+      termRef.current?.write?.(`\x1b[31mNo active VM session. Run a validation first.\x1b[0m\n`);
+      return;
+    }
+    try {
+      const r = await fetch("/api/setup/github/exec", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: vmSessionId, command }),
+      });
+      const result = await r.json() as { stdout?: string; stderr?: string; exitCode?: number; error?: string };
+      if (!r.ok) {
+        termRef.current?.write?.(`\x1b[31m${result.error ?? "Exec failed"}\x1b[0m\n`);
+        return;
+      }
+      if (result.stdout) termRef.current?.write?.(result.stdout);
+      if (result.stderr) termRef.current?.write?.(`\x1b[31m${result.stderr}\x1b[0m`);
+    } catch (e) {
+      termRef.current?.write?.(`\x1b[31m${e instanceof Error ? e.message : String(e)}\x1b[0m\n`);
+    }
+  }, [vmSessionId]);
+
+  const handleChatSend = useCallback(async (message: string) => {
+    setMessages((prev) => [...prev, { role: "user", content: message }]);
+    setStreaming(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      const r = await fetch("/api/setup/github/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          repoFullName: selectedRepo,
+          installationId: selectedRepoData?.installationId,
+          messages: [...messages, { role: "user", content: message }],
+        }),
+      });
+
+      if (!r.ok || !r.body) {
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "assistant", content: "Failed to get a response." };
+          return next;
+        });
+        setStreaming(false);
+        return;
+      }
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        let eventType = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+            if (eventType === "token") {
+              accumulated += data.text;
+              setMessages((prev) => {
+                const next = [...prev];
+                next[next.length - 1] = { role: "assistant", content: accumulated };
+                return next;
+              });
+            } else if (eventType === "profile:update") {
+              setProfile((prev) => ({ ...prev, [data.field]: data.value }));
+            }
+          }
+        }
+      }
+    } catch {
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = { role: "assistant", content: "Connection lost." };
+        return next;
+      });
+    } finally {
+      setStreaming(false);
+    }
+  }, [selectedRepo, selectedRepoData, messages]);
+
+  if (!session) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.topbar}>
+          <Logo size={24} />
+          <span className={styles.topbarName}>Reviewer</span>
+        </header>
+        <div className={styles.workspace}>
+          <div className={styles.loginNotice}>
+            <div className={styles.loginCard}>
+              <div className={styles.loginTitle}>Loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  function patchProfile(key: keyof Profile) {
-    return (value: string) => setProfile((prev) => ({ ...prev, [key]: value }));
+  if (!session.loggedIn) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.topbar}>
+          <Logo size={24} />
+          <span className={styles.topbarName}>Reviewer</span>
+        </header>
+        <div className={styles.workspace}>
+          <div className={styles.loginNotice}>
+            <div className={styles.loginCard}>
+              <div className={styles.loginTitle}>Sign in to continue</div>
+              <div className={styles.loginDesc}>
+                You need to be logged in to configure repositories.
+              </div>
+              <Button variant="primary" href="/auth/github/login">Login with GitHub</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className={styles.shell}>
-      <div className={styles.header}>
-        <div className={styles.logoRow}>
-          <Logo size={32} />
-          <Badge variant="accent">GitHub App setup</Badge>
-        </div>
-        <h1 className={styles.title}>FastVM Reviewer is ready for onboarding.</h1>
-        <p className={styles.desc}>
-          Turn repo hints into a deterministic <code>cloud-agents.md</code>. Draft commands,
-          supply secrets, validate in FastVM, then commit the approved config.
-        </p>
-      </div>
-
-      {config && (
-        <div className={styles.statusGrid}>
-          {[
-            { label: "Runner",     ok: config.runnerConfigured,     ok_label: "Connected", fail_label: "Missing RUNNER_BASE_URL" },
-            { label: "Storage",    ok: config.storageConfigured,    ok_label: "Connected", fail_label: "Missing D1 binding" },
-            { label: "Encryption", ok: config.encryptionConfigured, ok_label: "Connected", fail_label: "Missing encryption key" },
-          ].map(({ label, ok, ok_label, fail_label }) => (
-            <div key={label} className={styles.statusItem}>
-              <div className={`${styles.statusDot} ${ok ? styles.statusDotOk : styles.statusDotFail}`} />
-              <div>
-                <div className={styles.statusLabel}>{label}</div>
-                <div className={styles.statusValue}>{ok ? ok_label : fail_label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {config && (!config.storageConfigured || !config.encryptionConfigured) && (
-        <Notice variant="warning" className={styles.section}>
-          Cloudflare onboarding storage is not fully configured. Add the D1 binding and{" "}
-          <code>ONBOARDING_ENCRYPTION_KEY</code> before using validation or approval.
-        </Notice>
-      )}
-
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Repository</div>
-        <div className={styles.formGrid}>
-          <Field
-            id="installationId"
-            label="Installation ID"
-            value={installationId}
-            onChange={setInstallationId}
-            placeholder="GitHub installation ID"
-          />
-          <Field
-            id="repositorySelect"
-            type="select"
-            label="Repository"
-            value={selectedRepo}
-            onChange={setSelectedRepo}
-          >
-            <option value="">Select a repository</option>
-            {repositories.map((repo) => {
-              const suffix = repo.onboarding?.approvedProfile
-                ? " (configured)"
-                : repo.onboarding?.validation
-                  ? ` (${repo.onboarding.validation.status})`
-                  : "";
-              return (
+    <div className={styles.page}>
+      <header className={styles.topbar}>
+        <Logo size={24} />
+        <span className={styles.topbarName}>Reviewer</span>
+        <div className={styles.topbarSep} />
+        <select
+          className={styles.repoPicker}
+          value={selectedRepo}
+          onChange={(e) => setSelectedRepo(e.target.value)}
+        >
+          <option value="">Select a repository…</option>
+          {session.installations?.map((inst) => (
+            <optgroup key={inst.id} label={inst.account}>
+              {inst.repositories.map((repo) => (
                 <option key={repo.fullName} value={repo.fullName}>
-                  {repo.fullName}{suffix}
+                  {repo.fullName}
                 </option>
-              );
-            })}
-          </Field>
-        </div>
-        <div className={styles.actions}>
-          <Button variant="secondary" onClick={() => void loadRepositories()} disabled={loading}>
-            Load repositories
-          </Button>
-          <Button variant="ghost" onClick={() => void loadDraft()} disabled={loading}>
-            Load draft
-          </Button>
-        </div>
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Deterministic draft</div>
-        <div className={styles.formGrid3}>
-          <Field id="rootDir" label="Root directory" value={profile.rootDir} onChange={patchProfile("rootDir")} placeholder="/workspace/repo" />
-          <Field id="vmBaseSnapshot" label="VM base snapshot" value={profile.vmBaseSnapshot} onChange={patchProfile("vmBaseSnapshot")} placeholder="reviewer-base" />
-          <Field id="vmMachine" label="VM machine" value={profile.vmMachine} onChange={patchProfile("vmMachine")} placeholder="c1m2" />
-        </div>
-        <div className={styles.formGrid} style={{ marginTop: 10 }}>
-          <Field id="installCommand" label="Install" value={profile.installCommand} onChange={patchProfile("installCommand")} placeholder="bun install" />
-          <Field id="lintCommand" label="Lint" value={profile.lintCommand} onChange={patchProfile("lintCommand")} placeholder="bun run lint" />
-          <Field id="typecheckCommand" label="Typecheck" value={profile.typecheckCommand} onChange={patchProfile("typecheckCommand")} placeholder="bun run typecheck" />
-          <Field id="testCommand" label="Test" value={profile.testCommand} onChange={patchProfile("testCommand")} placeholder="bun run test" />
-          <Field id="appBootCommand" label="App boot" value={profile.appBootCommand} onChange={patchProfile("appBootCommand")} placeholder="bun run dev" />
-          <Field id="smokeTestCommand" label="Smoke test" value={profile.smokeTestCommand} onChange={patchProfile("smokeTestCommand")} placeholder="curl -f http://127.0.0.1:3000/health" />
-        </div>
-        <div className={styles.formGrid} style={{ marginTop: 10 }}>
-          <Field
-            id="envKeys"
-            type="textarea"
-            label="Environment variable names"
-            value={profile.envKeys}
-            onChange={patchProfile("envKeys")}
-            placeholder={"DATABASE_URL\nNEXTAUTH_SECRET"}
-          />
-          <Field
-            id="setupNotes"
-            type="textarea"
-            label="Notes"
-            value={profile.setupNotes}
-            onChange={patchProfile("setupNotes")}
-            placeholder="Validation should prove the app installs, boots, and responds cleanly."
-          />
-        </div>
-      </div>
-
-      {envKeys.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>Secret values</div>
-          <div className={styles.secretGrid}>
-            {envKeys.map((key) => (
-              <Field
-                key={key}
-                id={`secret-${key}`}
-                label={key}
-                value={secretValues[key] ?? ""}
-                onChange={(value) => setSecretValues((prev) => ({ ...prev, [key]: value }))}
-                placeholder="Optional value for validation"
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className={styles.actions}>
-        <Button variant="primary" onClick={() => void validate()} disabled={loading}>
-          Validate in FastVM
-        </Button>
-        <Button variant="secondary" onClick={() => void approve()} disabled={loading}>
-          Activate repository
-        </Button>
-        <Button variant="ghost" href="/health">
-          Check service health
-        </Button>
-      </div>
-
-      <div className={styles.section} style={{ marginTop: 28 }}>
-        <div className={styles.sectionTitle}>Validation result</div>
-        <Notice variant={status.kind === "default" ? "default" : status.kind}>
-          {status.message}
-        </Notice>
-        <div className={styles.resultsGrid} style={{ marginTop: 10 }}>
-          {[
-            { label: "Root files", content: rootFiles },
-            { label: "Generated cloud-agents.md", content: cloudAgents },
-            { label: "Validation logs", content: validationLogs },
-          ].map(({ label, content }) => (
-            <div key={label} className={styles.codeBlock}>
-              <div className={styles.codeLabel}>{label}</div>
-              <pre>{content}</pre>
-            </div>
+              ))}
+            </optgroup>
           ))}
+        </select>
+        <div className={styles.topbarRight}>
+          {selectedRepo && (
+            <Badge variant="accent">{selectedRepo.split("/")[1]}</Badge>
+          )}
+          <span className={styles.topbarUser}>{session.login}</span>
+          <Button variant="ghost" size="sm" href="/auth/github/logout">Log out</Button>
+        </div>
+      </header>
+
+      <div className={styles.workspace}>
+        <div className={styles.chatArea}>
+          <ChatPanel
+            messages={messages}
+            streaming={streaming}
+            onSend={handleChatSend}
+            disabled={!selectedRepo}
+          />
+        </div>
+        <div className={styles.configArea}>
+          <ConfigPanel
+            profile={profile}
+            onProfileChange={setProfile}
+            config={session.config}
+            loading={loading}
+            onValidate={handleValidate}
+            onActivate={handleActivate}
+          />
+        </div>
+        <div className={styles.terminalArea}>
+          <TerminalPanel onExec={handleExec} />
         </div>
       </div>
     </div>

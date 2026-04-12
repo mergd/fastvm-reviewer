@@ -6,6 +6,8 @@ import { handleGitHubWebhook } from "./routes/github-webhooks";
 import { hasRunnerAccess } from "./security/runner-auth";
 import { OnboardingService } from "./services/onboarding-service";
 import { OnboardingValidationService } from "./services/onboarding-validation-service";
+import { SetupChatService } from "./services/setup-chat-service";
+import type { SetupSessionStore } from "./services/setup-session-store";
 
 function routeKey(method: string, pathname: string): string {
   return `${method.toUpperCase()} ${pathname}`;
@@ -24,9 +26,10 @@ function parseRepoPath(pathname: string): { owner: string; repo: string; action:
   };
 }
 
-export function createRequestHandler(app: AppContext): (request: Request) => Promise<Response> {
+export function createRequestHandler(app: AppContext, sessionStore?: SetupSessionStore): (request: Request) => Promise<Response> {
   const onboarding = new OnboardingService(app);
   const validation = new OnboardingValidationService(app);
+  const chat = new SetupChatService(app);
 
   return async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -50,6 +53,31 @@ export function createRequestHandler(app: AppContext): (request: Request) => Pro
         }
 
         return json(await validation.validate(await request.json() as OnboardingValidationRequest));
+      case "POST /internal/onboarding/validate-stream":
+        if (!hasRunnerAccess(request, app.env.runnerSharedSecret)) {
+          return json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        return validation.validateStream(
+          await request.json() as OnboardingValidationRequest,
+          sessionStore
+        );
+      case "POST /internal/onboarding/exec":
+        if (!hasRunnerAccess(request, app.env.runnerSharedSecret)) {
+          return json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        return handleExec(app, sessionStore, await request.json() as { sessionId: string; command: string });
+      case "POST /internal/onboarding/chat":
+        if (!hasRunnerAccess(request, app.env.runnerSharedSecret)) {
+          return json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        return chat.handleStream(await request.json() as {
+          repoFullName: string;
+          installationId: number;
+          messages: Array<{ role: string; content: string }>;
+        });
       case "POST /internal/onboarding/repositories":
         if (!hasRunnerAccess(request, app.env.runnerSharedSecret)) {
           return json({ error: "Forbidden" }, { status: 403 });
@@ -93,4 +121,24 @@ export function createRequestHandler(app: AppContext): (request: Request) => Pro
       }
     }
   };
+}
+
+async function handleExec(
+  app: AppContext,
+  sessionStore: SetupSessionStore | undefined,
+  payload: { sessionId: string; command: string }
+): Promise<Response> {
+  const session = sessionStore?.get(payload.sessionId);
+  if (!session) {
+    return json({ error: "No active VM session" }, { status: 404 });
+  }
+
+  const result = await app.sessions.run(session, payload.command, 120);
+  return json({
+    exitCode: result.exit_code,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    timedOut: result.timed_out,
+    durationMs: result.duration_ms,
+  });
 }

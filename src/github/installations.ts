@@ -139,6 +139,10 @@ export class GitHubInstallations {
     name: string;
     owner: string;
     defaultBranch: string;
+    updatedAt: string | null;
+    description: string | null;
+    htmlUrl: string;
+    isFork: boolean;
   }>> {
     const octokit = await this.auth.getInstallationOctokit(installationId);
     const response = await octokit.rest.apps.listReposAccessibleToInstallation({
@@ -149,7 +153,11 @@ export class GitHubInstallations {
       fullName: repository.full_name,
       name: repository.name,
       owner: repository.owner.login,
-      defaultBranch: repository.default_branch
+      defaultBranch: repository.default_branch,
+      updatedAt: repository.pushed_at ?? repository.updated_at,
+      description: repository.description,
+      htmlUrl: repository.html_url,
+      isFork: repository.fork
     }));
   }
 

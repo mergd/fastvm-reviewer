@@ -24,9 +24,9 @@
 }
 
 .primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-  border-color: var(--accent);
+  background: var(--primary);
+  color: var(--primary-fg);
+  border-color: var(--primary);
 }
 
 .primary:hover:not(:disabled):not([data-disabled]) {
