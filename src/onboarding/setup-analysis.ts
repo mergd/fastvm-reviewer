@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { SetupAnalysis, SetupDocument } from "../types";
 
-const DEFAULT_MODEL = "gpt-5.4";
+const DEFAULT_MODEL = "gpt-6-astra";
 const PROFILE_KEYS = [
   "packageManager",
   "rootDir",
